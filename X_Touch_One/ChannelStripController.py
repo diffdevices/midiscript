@@ -342,6 +342,7 @@ class ChannelStripController(MackieControlComponent):
             Return the number of tracks, depending on if we are in send_track
             mode or normal track mode
         """
+        group_tracks = [track for track in self.song().visible_tracks if track.is_group_track]
         if self.__view_returns:
             return len(self.song().return_tracks)
         else:
@@ -587,63 +588,67 @@ class ChannelStripController(MackieControlComponent):
             self.__sub_mode_in_io_mode = CSM_IO_FIRST_MODE
 
     def __reassign_channel_strip_offsets(self):
-        u"""
-            Update the channel strips bank_channel offset
-        """
-        for s in self.__channel_strips:
-            s.set_bank_and_channel_offset(self.__strip_offset(), self.__view_returns, self.__within_track_added_or_deleted)
+    u"""
+        Update the channel strips bank_channel offset, explicitly accounting for group tracks.
+    """
+    for s in self.__channel_strips:
+        group_tracks = [track for track in self.song().visible_tracks if track.is_group_track]
+        all_tracks = list(self.song().visible_tracks) + list(self.song().return_tracks) + group_tracks
+        s.set_bank_and_channel_offset(self.__strip_offset(), self.__view_returns, self.__within_track_added_or_deleted, include_group_tracks=True)
 
-    def __reassign_channel_strip_parameters(self, for_display_only):
-        u"""
-            Reevaluate all v-pot/fader -> parameter assignments
-        """
-        display_parameters = []
-        for s in self.__channel_strips:
-            vpot_param = (None, None)
-            slider_param = (None, None)
-            vpot_display_mode = VPOT_DISPLAY_SINGLE_DOT
-            slider_display_mode = VPOT_DISPLAY_SINGLE_DOT
-            if self.__assignment_mode == CSM_VOLPAN:
-                if s.assigned_track() and s.assigned_track().has_audio_output:
-                    vpot_param = (s.assigned_track().mixer_device.panning, u'Pan')
-                    vpot_display_mode = VPOT_DISPLAY_BOOST_CUT
-                    slider_param = (s.assigned_track().mixer_device.volume, u'Volume')
-                    slider_display_mode = VPOT_DISPLAY_WRAP
-            elif self.__assignment_mode == CSM_PLUGINS:
-                vpot_param = self.__plugin_parameter(s.strip_index(), s.stack_offset())
-                vpot_display_mode = VPOT_DISPLAY_WRAP
-                if s.assigned_track() and s.assigned_track().has_audio_output:
-                    slider_param = (s.assigned_track().mixer_device.volume, u'Volume')
-                    slider_display_mode = VPOT_DISPLAY_WRAP
-            elif self.__assignment_mode == CSM_SENDS:
-                vpot_param = self.__send_parameter(s.strip_index(), s.stack_offset())
-                vpot_display_mode = VPOT_DISPLAY_WRAP
-                if s.assigned_track() and s.assigned_track().has_audio_output:
-                    slider_param = (s.assigned_track().mixer_device.volume, u'Volume')
-                    slider_display_mode = VPOT_DISPLAY_WRAP
-            elif self.__assignment_mode == CSM_IO:
-                if s.assigned_track() and s.assigned_track().has_audio_output:
-                    slider_param = (s.assigned_track().mixer_device.volume, u'Volume')
-            if self.__flip and self.__can_flip():
-                if self.__any_slider_is_touched():
-                    display_parameters.append(vpot_param)
-                else:
-                    display_parameters.append(slider_param)
-                if not for_display_only:
-                    s.set_v_pot_parameter(slider_param[0], slider_display_mode)
-                    s.set_fader_parameter(vpot_param[0])
+def __reassign_channel_strip_parameters(self, for_display_only):
+    u"""
+        Reevaluate all v-pot/fader -> parameter assignments, including group tracks.
+    """
+    display_parameters = []
+    for s in self.__channel_strips:
+        vpot_param = (None, None)
+        slider_param = (None, None)
+        vpot_display_mode = VPOT_DISPLAY_SINGLE_DOT
+        slider_display_mode = VPOT_DISPLAY_SINGLE_DOT
+        assigned_track = s.assigned_track()
+        
+        if self.__assignment_mode == CSM_VOLPAN:
+            if assigned_track and (assigned_track.has_audio_output or assigned_track.is_group_track):
+                vpot_param = (assigned_track.mixer_device.panning, u'Pan')
+                vpot_display_mode = VPOT_DISPLAY_BOOST_CUT
+                slider_param = (assigned_track.mixer_device.volume, u'Volume')
+                slider_display_mode = VPOT_DISPLAY_WRAP
+        elif self.__assignment_mode == CSM_PLUGINS:
+            vpot_param = self.__plugin_parameter(s.strip_index(), s.stack_offset())
+            vpot_display_mode = VPOT_DISPLAY_WRAP
+            if assigned_track and (assigned_track.has_audio_output or assigned_track.is_group_track):
+                slider_param = (assigned_track.mixer_device.volume, u'Volume')
+                slider_display_mode = VPOT_DISPLAY_WRAP
+        elif self.__assignment_mode == CSM_SENDS:
+            vpot_param = self.__send_parameter(s.strip_index(), s.stack_offset())
+            vpot_display_mode = VPOT_DISPLAY_WRAP
+            if assigned_track and (assigned_track.has_audio_output or assigned_track.is_group_track):
+                slider_param = (assigned_track.mixer_device.volume, u'Volume')
+                slider_display_mode = VPOT_DISPLAY_WRAP
+        elif self.__assignment_mode == CSM_IO:
+            if assigned_track and (assigned_track.has_audio_output or assigned_track.is_group_track):
+                slider_param = (assigned_track.mixer_device.volume, u'Volume')
+        if self.__flip and self.__can_flip():
+            if self.__any_slider_is_touched():
+                display_parameters.append(vpot_param)
             else:
-                if self.__any_slider_is_touched():
-                    display_parameters.append(slider_param)
-                else:
-                    display_parameters.append(vpot_param)
-                if not for_display_only:
-                    s.set_v_pot_parameter(vpot_param[0], vpot_display_mode)
-                    s.set_fader_parameter(slider_param[0])
+                display_parameters.append(slider_param)
+            if not for_display_only:
+                s.set_v_pot_parameter(slider_param[0], slider_display_mode)
+                s.set_fader_parameter(vpot_param[0])
+        else:
+            if self.__any_slider_is_touched():
+                display_parameters.append(slider_param)
+            else:
+                display_parameters.append(vpot_param)
+            if not for_display_only:
+                s.set_v_pot_parameter(vpot_param[0], vpot_display_mode)
+                s.set_fader_parameter(slider_param[0])
 
-        self.__main_display_controller.set_channel_offset(self.__strip_offset())
-        if len(display_parameters):
-            self.__main_display_controller.set_parameters(display_parameters)
+    self.__main_display_controller.set_channel_offset(self.__strip_offset())
+    if len(display_parameters):
+        self.__main_display_controller.set_parameters(display_parameters)
 
     def _need_to_update_meter(self, meter_state_changed):
         return meter_state_changed and self.__assignment_mode == CSM_VOLPAN
@@ -899,31 +904,33 @@ class ChannelStripController(MackieControlComponent):
                     self.__chosen_plugin = None
                     self.__set_plugin_mode(PCM_DEVICES)
 
-    def __on_tracks_added_or_deleted(self):
-        u"""
-            Notifier, called as soon as tracks where added, removed or moved
-        """
-        self.__within_track_added_or_deleted = True
-        for t in chain(self.song().visible_tracks, self.song().return_tracks):
-            if not t.solo_has_listener(self.__update_rude_solo_led):
-                t.add_solo_listener(self.__update_rude_solo_led)
-            if not t.has_audio_output_has_listener(self.__on_any_tracks_output_type_changed):
-                t.add_has_audio_output_listener(self.__on_any_tracks_output_type_changed)
+def __on_tracks_added_or_deleted(self):
+    u"""
+        Notifier, called as soon as tracks were added, removed, or moved.
+    """
+    self.__within_track_added_or_deleted = True
+    group_tracks = [track for track in self.song().visible_tracks if track.is_group_track]
 
-        if self.__send_mode_offset >= len(self.song().return_tracks):
-            self.__send_mode_offset = 0
-            self.__reassign_channel_strip_parameters(for_display_only=False)
-            self.__update_channel_strip_strings()
-        if self.__strip_offset() + len(self.__channel_strips) >= self.__controlled_num_of_tracks():
-            self.__set_channel_offset(max(0, self.__controlled_num_of_tracks() - len(self.__channel_strips)))
+    for t in chain(self.song().visible_tracks, self.song().return_tracks, group_tracks):
+        if not t.solo_has_listener(self.__update_rude_solo_led):
+            t.add_solo_listener(self.__update_rude_solo_led)
+        if not t.has_audio_output_has_listener(self.__on_any_tracks_output_type_changed):
+            t.add_has_audio_output_listener(self.__on_any_tracks_output_type_changed)
+
+    if self.__send_mode_offset >= len(self.song().return_tracks):
+        self.__send_mode_offset = 0
         self.__reassign_channel_strip_parameters(for_display_only=False)
         self.__update_channel_strip_strings()
-        if self.__assignment_mode == CSM_SENDS:
-            self.__update_page_switch_leds()
-        self.refresh_state()
-        self.__main_display_controller.refresh_state()
-        self.__within_track_added_or_deleted = False
-        self.request_rebuild_midi_map()
+    if self.__strip_offset() + len(self.__channel_strips) >= self.__controlled_num_of_tracks():
+        self.__set_channel_offset(max(0, self.__controlled_num_of_tracks() - len(self.__channel_strips)))
+    self.__reassign_channel_strip_parameters(for_display_only=False)
+    self.__update_channel_strip_strings()
+    if self.__assignment_mode == CSM_SENDS:
+        self.__update_page_switch_leds()
+    self.refresh_state()
+    self.__main_display_controller.refresh_state()
+    self.__within_track_added_or_deleted = False
+    self.request_rebuild_midi_map()
 
     def __on_any_tracks_output_type_changed(self):
         u"""
