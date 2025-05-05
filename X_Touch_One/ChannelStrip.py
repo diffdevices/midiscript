@@ -65,6 +65,7 @@ class ChannelStrip(MackieControlComponent):
     def set_bank_and_channel_offset(self, offset, show_return_tracks, within_track_added_or_deleted):
         final_track_index = self.__strip_index + self.__stack_offset + offset
         self.__within_track_added_or_deleted = within_track_added_or_deleted
+        include_group_tracks = True  # or False, as needed
         if show_return_tracks:
             tracks = self.song().return_tracks
         else:
