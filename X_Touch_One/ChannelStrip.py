@@ -69,6 +69,10 @@ class ChannelStrip(MackieControlComponent):
             tracks = self.song().return_tracks
         else:
             tracks = self.song().visible_tracks
+
+         if include_group_tracks:
+        tracks = [track for track in tracks if track.is_group_track or not track.is_group_track]
+        
         if final_track_index < len(tracks):
             new_track = tracks[final_track_index]
         else:
